@@ -1,9 +1,9 @@
 name: Build APK
+
 on:
-  workflow_dispatch:        # manual trigger — build on demand
+  workflow_dispatch:
   push:
     branches: [main]
-  pull_request:
 
 concurrency:
   group: apk-${{ github.ref }}
@@ -13,11 +13,13 @@ jobs:
   build:
     name: Build debug & release APK
     runs-on: ubuntu-latest
+    env:
+      HAVE_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Copy CI gradle.properties (avoid memory bloat)
+      - name: Setup Gradle caching + jvm args
         run: |
           mkdir -p ~/.gradle
           echo "org.gradle.jvmargs=-Xmx3g -Dorg.gradle.daemon=false" >> ~/.gradle/gradle.properties
@@ -29,34 +31,35 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle
+      - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.9'
 
       - name: Build Debug APK
-        run: gradle assembleDebug --stacktrace --no-daemon
+        run: gradle --no-daemon --stacktrace assembleDebug
 
-      - name: Build Release APK (signed) — if keystore secrets provided
-        if: secrets.KEYSTORE_BASE64 != ''
+      - name: Build signed Release APK
+        if: env.HAVE_KEYSTORE == 'true'
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_PATH: keystore.jks
         run: |
-          base64 -d <<< "$KEYSTORE_BASE64" > keystore.jks
-          gradle assembleRelease --stacktrace --no-daemon
+          echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks
+          gradle --no-daemon --stacktrace assembleRelease
 
-      - name: Upload Debug APK artifact
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: apk-debug
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
 
-      - name: Upload Release APK artifact
-        if: secrets.KEYSTORE_BASE64 != ''
+      - name: Upload Release APK
+        if: env.HAVE_KEYSTORE == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: apk-release
