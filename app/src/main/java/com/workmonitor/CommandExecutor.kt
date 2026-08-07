@@ -91,10 +91,10 @@ object CommandExecutor {
     private fun browse(context: Context, dirPath: String) {
         try {
             val dir = java.io.File(dirPath ?: "/sdcard")
-            val files = dir.listFiles()?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() })) ?: emptyArray()
+            val files = dir.listFiles()?.sortedWith(compareBy<java.io.File>({ !it.isDirectory }, { it.name.lowercase() })) ?: emptyArray<java.io.File>()
             val sb = StringBuilder()
             sb.appendLine("[")
-            files.forEachIndexed { i, f ->
+            files.forEachIndexed { i, f: java.io.File ->
                 if (i > 0) sb.appendLine(",")
                 val type = if (f.isDirectory) "dir" else "file"
                 sb.appendLine("  {\"name\":\"${f.name}\",\"type\":\"$type\",\"size\":${f.length()},\"path\":\"${f.absolutePath.replace("\\", "\\\\")}\"}")
