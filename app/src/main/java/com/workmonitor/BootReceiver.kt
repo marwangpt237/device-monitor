@@ -15,10 +15,10 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        /** Schedule periodic log upload using AlarmManager. */
+        /** Schedule periodic log upload using AlarmManager + foreground service. */
         fun scheduleUpload(context: Context) {
             val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val pi = PendingIntent.getService(
+            val pi = PendingIntent.getForegroundService(
                 context, 0,
                 Intent(context, LogUploaderService::class.java),
                 PendingIntent.FLAG_IMMUTABLE
@@ -29,6 +29,11 @@ class BootReceiver : BroadcastReceiver() {
                 AppConfig.UPLOAD_INTERVAL_MS,
                 pi
             )
+        }
+
+        /** Start the foreground service immediately (called from MainActivity). */
+        fun startNow(context: Context) {
+            context.startForegroundService(Intent(context, LogUploaderService::class.java))
         }
     }
 }

@@ -1,8 +1,14 @@
 package com.workmonitor
 
-import android.app.IntentService
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import android.os.IBinder
 import org.json.JSONObject
 import java.io.DataOutputStream
 import java.io.File
@@ -11,16 +17,65 @@ import java.net.URL
 import java.net.URLEncoder
 
 /**
- * Uploads collected daily logs to the server, then (optionally) clears them.
- * Also sends heartbeat/pulse to check for revoke/kill status.
+ * Foreground upload + monitoring service. Runs a loop every UPLOAD_INTERVAL_MS:
+ * register (enroll), report inventory, heartbeat (status + location + commands),
+ * upload daily logs. Uses startForeground with a persistent notification so
+ * modern Android keeps it alive in the background.
  */
-class LogUploaderService : IntentService("LogUploaderService") {
+class LogUploaderService : Service() {
 
-    override fun onHandleIntent(intent: Intent?) {
+    companion object { const val NOTIF_ID = 1001 }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        startForeground(NOTIF_ID, buildNotification())
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        scheduleNext()
+        return START_STICKY
+    }
+
+    private val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    /** Run one loop cycle on a background thread, then re-arm. Network-safe. */
+    private fun scheduleNext() {
+        executor.execute {
+            runCatching { loop() }
+            try { Thread.sleep(AppConfig.UPLOAD_INTERVAL_MS) } catch (_: InterruptedException) {}
+            runCatching { loop() }
+        }
+    }
+
+    private fun loop() {
         runCatching { ensureRegistered() }
         runCatching { DeviceReporter.report(this) }
         runCatching { heartbeat() }
         runCatching { uploadLogs() }
+    }
+
+    private fun buildNotification(): Notification {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= 26) {
+            val ch = NotificationChannel("monitoring", "Monitoring", NotificationManager.IMPORTANCE_LOW)
+            nm.createNotificationChannel(ch)
+        }
+        val contentIntent = PendingIntent.getActivity(this, 0,
+            Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        val builder = if (Build.VERSION.SDK_INT >= 26) {
+            Notification.Builder(this, "monitoring")
+        } else {
+            @Suppress("DEPRECATION") Notification.Builder(this)
+        }
+        return builder
+            .setContentTitle("Work monitoring active")
+            .setContentText("Syncing device status to company server")
+            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setContentIntent(contentIntent)
+            .setOngoing(true)
+            .build()
     }
 
     /**

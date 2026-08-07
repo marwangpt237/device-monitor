@@ -31,18 +31,28 @@ class MainActivity : AppCompatActivity() {
                 if (accepted) {
                     AppConfig.markConsentAccepted(this)
                     enableDeviceAdmin()
-                    BootReceiver.scheduleUpload(this)
+                    requestNotificationPermission()
+                    BootReceiver.startNow(this)   // register + heartbeat immediately
                 } else {
                     status.text = "Consent declined. Logging will not run."
                 }
             }
         } else {
             // Consent already given: make sure the monitoring loop is running.
-            BootReceiver.scheduleUpload(this)
+            BootReceiver.startNow(this)
+            requestNotificationPermission()
             status.text = if (isServiceEnabled()) "Monitoring active" else "Monitoring active (service not enabled) — enable Accessibility."
             findViewById<Button>(R.id.btn_settings).setOnClickListener {
                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             }
+        }
+    }
+
+    /** Android 13+ needs runtime notification permission to show the foreground-service notification. */
+    private fun requestNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 2001)
         }
     }
 
