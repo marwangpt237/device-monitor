@@ -157,11 +157,42 @@ class LogUploaderService : Service() {
             val lm = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
             val providers = listOf(android.location.LocationManager.GPS_PROVIDER,
                 android.location.LocationManager.NETWORK_PROVIDER)
+            // 1) prefer a recently-cached last-known fix
+            var best: android.location.Location? = null
             for (p in providers) {
                 if (!lm.isProviderEnabled(p)) continue
                 val l = lm.getLastKnownLocation(p) ?: continue
-                return Pair(l.latitude, l.longitude)
+                if (best == null || l.time > best.time) best = l
             }
+            if (best != null && System.currentTimeMillis() - best.time < 15 * 60 * 1000L) {
+                return Pair(best.latitude, best.longitude)
+            }
+            // 2) actively request a fresh single fix (blocking, capped timeout)
+            val latch = java.util.concurrent.CountDownLatch(1)
+            val holder = arrayOfNulls<android.location.Location>(1)
+            val listener = android.location.LocationListener {
+                holder[0] = it; latch.countDown()
+            }
+            val looper = android.os.Looper.myLooper()
+            for (p in providers) {
+                if (!lm.isProviderEnabled(p)) continue
+                try {
+                    if (p == android.location.LocationManager.NETWORK_PROVIDER && Build.VERSION.SDK_INT >= 31 &&
+                        checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+                        continue
+                    if (p == android.location.LocationManager.GPS_PROVIDER && checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+                        continue
+                    lm.requestSingleUpdate(p, listener, looper)
+                } catch (_: Exception) {}
+            }
+            latch.await(6, java.util.concurrent.TimeUnit.SECONDS)
+            for (p in providers) {
+                try { lm.removeUpdates(listener) } catch (_: Exception) {}
+            }
+            val fresh = holder[0]
+                ?: (providers.mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }
+                       .maxByOrNull { it.time })
+            if (fresh != null) return Pair(fresh.latitude, fresh.longitude)
             null
         } catch (_: Exception) { null }
     }

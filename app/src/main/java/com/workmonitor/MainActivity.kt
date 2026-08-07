@@ -48,12 +48,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Android 13+ needs runtime notification permission to show the foreground-service notification. */
+    /** Request runtime permissions (notification on 13+, location up to 30) in one batch. */
     private fun requestNotificationPermission() {
+        val perms = ArrayList<String>()
         if (android.os.Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 2001)
-        }
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            perms.add(android.Manifest.permission.POST_NOTIFICATIONS)
+        if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            perms.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+        else if (checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            perms.add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (perms.isNotEmpty())
+            requestPermissions(perms.toTypedArray(), 2001)
     }
 
     private fun isServiceEnabled(): Boolean {
