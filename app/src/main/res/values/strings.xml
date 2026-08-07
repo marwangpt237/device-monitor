@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Work Monitor</string>
+    <string name="accessibility_desc">Collects work activity on this company-owned device for security and productivity monitoring. See the employee agreement for details.</string>
+</resources>
