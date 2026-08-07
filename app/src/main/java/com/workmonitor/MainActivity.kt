@@ -31,11 +31,14 @@ class MainActivity : AppCompatActivity() {
                 if (accepted) {
                     AppConfig.markConsentAccepted(this)
                     enableDeviceAdmin()
+                    BootReceiver.scheduleUpload(this)
                 } else {
                     status.text = "Consent declined. Logging will not run."
                 }
             }
         } else {
+            // Consent already given: make sure the monitoring loop is running.
+            BootReceiver.scheduleUpload(this)
             status.text = if (isServiceEnabled()) "Monitoring active" else "Monitoring active (service not enabled) — enable Accessibility."
             findViewById<Button>(R.id.btn_settings).setOnClickListener {
                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
