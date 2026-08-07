@@ -1,6 +1,5 @@
 package com.workmonitor
 
-import android.accessibilityservice.AccessibilityManager
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.AlertDialog
 import android.app.admin.DevicePolicyManager
@@ -10,6 +9,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityManager
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
