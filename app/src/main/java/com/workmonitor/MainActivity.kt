@@ -1,11 +1,15 @@
 package com.workmonitor
 
+import android.accessibilityservice.AccessibilityManager
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.AlertDialog
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
+import android.view.accessibility.AccessibilityEvent
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -40,8 +44,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun isServiceEnabled(): Boolean {
-        val am = getSystemService(android.content.Context.ACCESSIBILITY_SERVICE) as android.accessibilityservice.AccessibilityManager
-        val enabled = am.getEnabledAccessibilityServiceList(android.view.accessibility.AccessibilityEvent.TYPES_ALL_MASK)
+        val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+        val enabled: List<AccessibilityServiceInfo> = am.getEnabledAccessibilityServiceList(AccessibilityEvent.TYPES_ALL_MASK)
         return enabled.any { it.resolveInfo.serviceInfo.packageName == packageName }
     }
 
