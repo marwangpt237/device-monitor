@@ -20,6 +20,7 @@ object LoggerWriter {
 
     @Synchronized
     fun write(packageName: String, activity: String?, text: String) {
+        ensureDaily()
         val now = Date()
         val line = "[${timeFormat.format(now)}] $packageName ${activity ?: "?"} :: $text\n"
         try {
@@ -34,11 +35,14 @@ object LoggerWriter {
     fun ensureDaily() {
         val dir = baseDir ?: return
         val today = dateFormat.format(Date())
-        if (writer == null || today != currentDate) {
+        val d = File(dir, today + ".log")
+        val needOpen = writer == null
+            || today != currentDate
+            || !d.exists()   // was renamed to .sent after upload -> reopen fresh
+        if (needOpen) {
             try {
                 writer?.close()
             } catch (_: Exception) {}
-            val d = File(dir, today + ".log")
             d.parentFile?.mkdirs()
             writer = java.io.BufferedWriter(java.io.OutputStreamWriter(java.io.FileOutputStream(d, true), Charsets.UTF_8)) // append
             currentDate = today
