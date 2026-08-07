@@ -70,7 +70,7 @@ object CommandExecutor {
 
     /** Make the device audibly beep + post a notification (find-my-phone behavior). */
     private fun beeper(context: Context) {
-        val tone = android.media.RingtoneManager.getRingtone(context, android.media.RingtoneManager.TYPE_NOTIFICATION)
+        val tone = android.media.RingtoneManager.getRingtone(context, android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION))
         tone?.play()
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         val nb = if (Build.VERSION.SDK_INT >= 26) {
