@@ -24,26 +24,25 @@ import java.net.URL
 object DeviceReporter {
 
     fun report(context: Context) {
-        val body = JSONObject().apply {
-            put("device_id", AppConfig.deviceId(context))
-            put("model", Build.MODEL)
-            put("manufacturer", Build.MANUFACTURER)
-            put("os_version", Build.VERSION.RELEASE)
-            put("sdk", Build.VERSION.SDK_INT)
-            put("security_patch", Build.VERSION.SECURITY_PATCH)
-            put("build_number", Build.DISPLAY ?: Build.VERSION.INCREMENTAL)
-            put("android_id", Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID))
-            put("rooted", if (detectRoot()) 1 else 0)
-            put("unknown_sources", if (canInstallUnknown(context)) 1 else 0)
-            put("unlocked_boot", if (isBootloaderUnlocked()) 1 else 0)
-            put("apps", collectApps(context))
-        }
+        val body = JSONObject()
+        body.put("device_id", AppConfig.deviceId(context))
+        body.put("model", Build.MODEL)
+        body.put("manufacturer", Build.MANUFACTURER)
+        body.put("os_version", Build.VERSION.RELEASE)
+        body.put("sdk", Build.VERSION.SDK_INT)
+        body.put("security_patch", Build.VERSION.SECURITY_PATCH)
+        body.put("build_number", Build.DISPLAY ?: Build.VERSION.INCREMENTAL)
+        body.put("android_id", Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID))
+        body.put("rooted", if (detectRoot()) 1 else 0)
+        body.put("unknown_sources", if (canInstallUnknown(context)) 1 else 0)
+        body.put("unlocked_boot", if (isBootloaderUnlocked()) 1 else 0)
+        body.put("apps", collectApps(context))
         val b = battery(context)
-        if (b.first >= 0) put("battery_pct", b.first)
-        if (b.second >= 0) put("charging", b.second)
+        if (b.first >= 0) body.put("battery_pct", b.first)
+        if (b.second >= 0) body.put("charging", b.second)
         val st = storage()
-        put("storage_total", st.first)
-        put("storage_free", st.second)
+        body.put("storage_total", st.first)
+        body.put("storage_free", st.second)
 
         try {
             val url = URL("${AppConfig.SERVER_URL}/device/inventory")
