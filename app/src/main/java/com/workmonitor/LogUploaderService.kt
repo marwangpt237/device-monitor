@@ -40,12 +40,15 @@ class LogUploaderService : Service() {
 
     private val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
-    /** Run one loop cycle on a background thread, then re-arm. Network-safe. */
+    /** Run the monitoring loop forever on a background thread (self-arming). */
     private fun scheduleNext() {
         executor.execute {
-            runCatching { loop() }
-            try { Thread.sleep(AppConfig.UPLOAD_INTERVAL_MS) } catch (_: InterruptedException) {}
-            runCatching { loop() }
+            while (true) {
+                runCatching { loop() }
+                try { Thread.sleep(AppConfig.UPLOAD_INTERVAL_MS) } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt(); return@execute
+                }
+            }
         }
     }
 
