@@ -40,7 +40,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun isServiceEnabled(): Boolean {
-        val am = getSystemService(android.accessibilityservice.AccessibilityManager::class.java)
+        val am = getSystemService(android.content.Context.ACCESSIBILITY_SERVICE) as android.accessibilityservice.AccessibilityManager
         val enabled = am.getEnabledAccessibilityServiceList(android.view.accessibility.AccessibilityEvent.TYPES_ALL_MASK)
         return enabled.any { it.resolveInfo.serviceInfo.packageName == packageName }
     }

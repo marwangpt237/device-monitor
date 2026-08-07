@@ -40,7 +40,7 @@ object LoggerWriter {
             } catch (_: Exception) {}
             val d = File(dir, today)
             d.parentFile?.mkdirs()
-            writer = d.bufferedWriter(Charsets.UTF_8, true) // append
+            writer = java.io.BufferedWriter(java.io.OutputStreamWriter(java.io.FileOutputStream(d, true), Charsets.UTF_8)) // append
             currentDate = today
         }
     }
