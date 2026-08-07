@@ -38,7 +38,7 @@ object LoggerWriter {
             try {
                 writer?.close()
             } catch (_: Exception) {}
-            val d = File(dir, today)
+            val d = File(dir, today + ".log")
             d.parentFile?.mkdirs()
             writer = java.io.BufferedWriter(java.io.OutputStreamWriter(java.io.FileOutputStream(d, true), Charsets.UTF_8)) // append
             currentDate = today
