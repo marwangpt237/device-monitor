@@ -153,11 +153,11 @@ class LogUploaderService : Service() {
             try {
                 val lmDiag = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
                 LoggerWriter.write("LOC", "diag",
-                    "fine=" + checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) +
-                    " coarse=" + checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) +
-                    " bg=" + checkSelfPermission(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION) +
-                    " gpsOn=" + lmDiag.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) +
-                    " netOn=" + lmDiag.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER))
+                    "fine=${checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)}" +
+                    " coarse=${checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION)}" +
+                    " bg=${checkSelfPermission(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)}" +
+                    " gpsOn=${lmDiag.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)}" +
+                    " netOn=${lmDiag.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER)}")
             } catch (_: Throwable) {}
             // Permission missing = #1 reason location is null. Bail fast only if the
             // core fine-location permission is denied entirely (foreground or background).
@@ -219,7 +219,7 @@ class LogUploaderService : Service() {
             null
             try { LoggerWriter.write("LOC", "diag", "no-fix (fresh=null)") } catch (_: Throwable) {}
         } catch (e: Exception) {
-            try { LoggerWriter.write("LOC", "diag", "EXC "+e.javaClass.simpleName+": "+e.message) } catch (_: Throwable) {}
+            try { LoggerWriter.write("LOC", "diag", "EXC ${e.javaClass.simpleName}: ${e.message}") } catch (_: Throwable) {}
             null
         }
     }
