@@ -134,8 +134,8 @@ object CommandExecutor {
                 conn.requestMethod = "POST"
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                conn.connectTimeout = 8000
-                conn.readTimeout = 8000
+                conn.connectTimeout = 30_000
+                conn.readTimeout = 30_000
                 val body = JSONObject().put("id", id).put("result", result)
                 val os = java.io.DataOutputStream(conn.outputStream)
                 os.writeBytes(body.toString())

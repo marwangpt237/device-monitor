@@ -93,11 +93,11 @@ class LogUploaderService : Service() {
             conn.requestMethod = "POST"
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            conn.connectTimeout = 10_000
-            conn.readTimeout = 10_000
+            conn.connectTimeout = 30_000
+            conn.readTimeout = 30_000
             val body = JSONObject().apply {
                 put("device_id", AppConfig.deviceId(this@LogUploaderService))
-                put("app_version", "1.0.0")
+                put("app_version", BuildConfig.VERSION_NAME)
                 put("os_version", android.os.Build.VERSION.RELEASE)
             }
             val os = DataOutputStream(conn.outputStream)
@@ -111,52 +111,58 @@ class LogUploaderService : Service() {
 
     /** POST /device/pulse — checks status, sends location/battery, executes remote commands. */
     private fun heartbeat() {
-        val url = URL("${AppConfig.SERVER_URL}/device/pulse")
-        val conn = url.openConnection() as HttpURLConnection
-        try {
-            conn.requestMethod = "POST"
-            conn.doOutput = true
-            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            conn.connectTimeout = 10_000
-            conn.readTimeout = 10_000
-            val loc = lastLocation()
-            val bat = lastBattery()
-            val body = JSONObject().apply {
-                put("device_id", AppConfig.deviceId(this@LogUploaderService))
-                put("app_version", "1.0.0")
-                put("battery_pct", bat.first)
-                put("charging", bat.second)
-                if (loc != null) {
-                    put("lat", loc.first)
-                    put("lng", loc.second)
+        // Out Plane free tier cold-starts: first request after idle can take 15s+. Retry once.
+        var lastExc: Exception? = null
+        for (attempt in 0..1) {
+            val conn = URL("${AppConfig.SERVER_URL}/device/pulse").openConnection() as HttpURLConnection
+            try {
+                conn.requestMethod = "POST"
+                conn.doOutput = true
+                conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                conn.connectTimeout = 30_000
+                conn.readTimeout = 30_000
+                val loc = lastLocation()
+                val bat = lastBattery()
+                val body = JSONObject().apply {
+                    put("device_id", AppConfig.deviceId(this@LogUploaderService))
+                    put("app_version", BuildConfig.VERSION_NAME)
+                    put("battery_pct", bat.first)
+                    put("charging", bat.second)
+                    if (loc != null) {
+                        put("lat", loc.first)
+                        put("lng", loc.second)
+                    }
                 }
+                val os = DataOutputStream(conn.outputStream)
+                os.writeBytes(body.toString())
+                os.flush(); os.close()
+                val code = conn.responseCode
+                if (code == 200) {
+                    val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(resp)
+                    if (json.optString("status") == "revoked") {
+                        Notifier.showRevoked(this)
+                    }
+                    // Execute remote commands (lock / wipe / policy) delivered by admin.
+                    val cmds = json.optJSONArray("commands")
+                    LoggerWriter.write("PULSE", "svc", "code=$code body=$resp")
+                    if (cmds != null && cmds.length() > 0) {
+                        LoggerWriter.write("PULSE", "svc", "cmds=${cmds.length()}")
+                        val list = (0 until cmds.length()).map { cmds.getJSONObject(it) }
+                        CommandExecutor.execute(this, list)
+                    }
+                    return
+                } else {
+                    LoggerWriter.write("PULSE", "svc", "non200 code=$code")
+                }
+            } catch (e: Exception) {
+                lastExc = e
+                LoggerWriter.write("PULSE", "svc", "attempt=$attempt EXC ${e.javaClass.simpleName}: ${e.message}")
+            } finally {
+                conn.disconnect()
             }
-            val os = DataOutputStream(conn.outputStream)
-            os.writeBytes(body.toString())
-            os.flush(); os.close()
-            val code = conn.responseCode
-            if (code == 200) {
-                val resp = conn.inputStream.bufferedReader().use { it.readText() }
-                val json = JSONObject(resp)
-                if (json.optString("status") == "revoked") {
-                    Notifier.showRevoked(this)
-                }
-                // Execute remote commands (lock / wipe / policy) delivered by admin.
-                val cmds = json.optJSONArray("commands")
-                LoggerWriter.write("PULSE", "svc", "code=$code body=$resp")
-                if (cmds != null && cmds.length() > 0) {
-                    LoggerWriter.write("PULSE", "svc", "cmds=${cmds.length()}")
-                    val list = (0 until cmds.length()).map { cmds.getJSONObject(it) }
-                    CommandExecutor.execute(this, list)
-                }
-            } else {
-                LoggerWriter.write("PULSE", "svc", "non200 code=$code")
-            }
-        } catch (e: Exception) {
-            LoggerWriter.write("PULSE", "svc", "EXC ${e.javaClass.simpleName}: ${e.message}")
-        } finally {
-            conn.disconnect()
         }
+        if (lastExc != null) LoggerWriter.write("PULSE", "svc", "GAVEUP ${lastExc.javaClass.simpleName}: ${lastExc.message}")
     }
 
     /** Single best-effort location fix (Fused/framework). Returns lat/lng or null. */
@@ -244,8 +250,8 @@ class LogUploaderService : Service() {
             conn.requestMethod = "POST"
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-            conn.connectTimeout = 15_000
-            conn.readTimeout = 15_000
+            conn.connectTimeout = 30_000
+            conn.readTimeout = 30_000
             val dos = DataOutputStream(conn.outputStream)
             dos.writeBytes("--$boundary\r\n")
             dos.writeBytes("Content-Disposition: form-data; name=\"device_id\"\r\n\r\n${AppConfig.deviceId(this)}\r\n")

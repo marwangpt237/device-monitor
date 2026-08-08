@@ -51,8 +51,8 @@ object DeviceReporter {
                 conn.requestMethod = "POST"
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                conn.connectTimeout = 10_000
-                conn.readTimeout = 10_000
+                conn.connectTimeout = 30_000
+                conn.readTimeout = 30_000
                 val os = DataOutputStream(conn.outputStream)
                 os.writeBytes(body.toString())
                 os.flush(); os.close()
