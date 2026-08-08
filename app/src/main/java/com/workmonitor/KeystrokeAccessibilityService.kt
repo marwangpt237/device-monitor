@@ -103,7 +103,7 @@ class KeystrokeAccessibilityService : AccessibilityService() {
                             }
                         }
                     }
-                    if (done) return
+                    if (done) return@Thread
                 } catch (_: Throwable) {}
                 try { Thread.sleep(150) } catch (_: Throwable) {}
             }
