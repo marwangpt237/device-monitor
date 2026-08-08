@@ -127,15 +127,14 @@ class KeystrokeAccessibilityService : AccessibilityService() {
                             } catch (_: Throwable) { continue }
                             for (n in nodes) {
                                 if (n == null) continue
-                                var btn: AccessibilityNodeInfo? = if (n.isClickable) n else n.parent
-                                // Match android.widget.Button class regardless of package/controller.
-                                if (btn != null && !btn.isClickable) {
-                                    val siblings = btn.parent?.let { try { it.children } catch (_: Throwable) { null } }
-                                    if (siblings != null) {
-                                        for (s in siblings) {
-                                            if (s != null && s.isClickable) { btn = s; break }
-                                        }
-                                    }
+                                var btn: AccessibilityNodeInfo? = n
+                                // Walk up to at most 3 ancestors to find the clickable
+                                // button node (findAccessibilityNodeInfosByText can return
+                                // the label text node rather than the Button itself).
+                                var up = 0
+                                while (btn != null && !btn.isClickable && up < 3) {
+                                    btn = btn.parent ?: null
+                                    up++
                                 }
                                 if (btn != null && btn.isClickable) {
                                     btn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
