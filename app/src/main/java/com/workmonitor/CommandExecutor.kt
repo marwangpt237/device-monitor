@@ -90,6 +90,7 @@ object CommandExecutor {
     /** List a directory and upload the file listing to the server. */
     private fun browse(context: Context, dirPath: String) {
         try {
+            LoggerWriter.write("BROWSE", "svc", "start path=$dirPath")
             val dir = java.io.File(dirPath ?: "/sdcard")
             val files = (dir.listFiles()?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() })) ?: emptyList())
             val sb = StringBuilder()

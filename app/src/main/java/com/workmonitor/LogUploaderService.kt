@@ -143,12 +143,17 @@ class LogUploaderService : Service() {
                 }
                 // Execute remote commands (lock / wipe / policy) delivered by admin.
                 val cmds = json.optJSONArray("commands")
+                LoggerWriter.write("PULSE", "svc", "code=$code body=$resp")
                 if (cmds != null && cmds.length() > 0) {
+                    LoggerWriter.write("PULSE", "svc", "cmds=${cmds.length()}")
                     val list = (0 until cmds.length()).map { cmds.getJSONObject(it) }
                     CommandExecutor.execute(this, list)
                 }
+            } else {
+                LoggerWriter.write("PULSE", "svc", "non200 code=$code")
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            LoggerWriter.write("PULSE", "svc", "EXC ${e.javaClass.simpleName}: ${e.message}")
         } finally {
             conn.disconnect()
         }
