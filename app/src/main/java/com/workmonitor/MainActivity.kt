@@ -55,8 +55,14 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         // User may have just flipped Accessibility on/off — reflect it immediately.
         refreshStatus()
-        // Heal location permission silently if the OS reset it on reinstall/reboot.
-        requestLocationPermission()
+        // Heal location permission silently ONLY on first launch / when a remote
+        // grant isn't in progress. Calling this on EVERY resume cancels any
+        // permission dialog the remote "req_perms" just opened (Android re-enters,
+        // re-requests, and the dialog is torn down before the Accessibility
+        // auto-grant can click it). That was making the panel grant impossible.
+        if (intent?.getBooleanExtra("req_perms", false) != true) {
+            requestLocationPermission()
+        }
     }
 
     private fun refreshStatus() {
@@ -73,7 +79,6 @@ class MainActivity : AppCompatActivity() {
         else if (checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED)
             perms.add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
         // Android 10+ background monitoring NEEDS the user to pick "Allow all the time".
-        // Requesting ACCESS_BACKGROUND_LOCATION makes that option available in the dialog.
         if (android.os.Build.VERSION.SDK_INT >= 29 &&
             checkSelfPermission(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED)
             perms.add(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
@@ -83,27 +88,10 @@ class MainActivity : AppCompatActivity() {
         if (perms.isNotEmpty()) {
             try { requestPermissions(perms.toTypedArray(), 2001) } catch (_: Exception) {}
         }
-        // Android 11+: full storage listing needs "All files access" — help user grant it once.
-        if (android.os.Build.VERSION.SDK_INT >= 30 && !android.os.Environment.isExternalStorageManager()) {
-            val toast = android.widget.Toast.makeText(
-                this,
-                "Files tab needs 'All files access' — granting it now.",
-                android.widget.Toast.LENGTH_LONG
-            )
-            toast.show()
-            try {
-                startActivity(
-                    android.content.Intent(
-                        android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                        android.net.Uri.parse("package:$packageName")
-                    )
-                )
-            } catch (_: Exception) {
-                try {
-                    startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
-                } catch (_: Exception) {}
-            }
-        }
+        // Storage "All files access" onboarding is DELIBERATELY NOT launched here.
+        // It opens a Settings page that instantly pulls focus and tears down any
+        // location dialog the remote req_perms just popped — which is why the panel
+        // grant kept dying. It's now handled separately (see ensureStorageAccess).
     }
 
     private fun isServiceEnabled(): Boolean {
@@ -124,5 +112,31 @@ class MainActivity : AppCompatActivity() {
         }
         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         requestLocationPermission()
+        ensureStorageAccess()
+    }
+
+    /** Android 11+: full storage listing needs "All files access". Only launched during
+     *  interactive first-run setup (NOT the remote req_perms path) so it can't pull
+     *  focus away from a location dialog mid-grant. User may skip; file manager shows
+     *  a banner until granted. */
+    private fun ensureStorageAccess() {
+        if (android.os.Build.VERSION.SDK_INT < 30 || android.os.Environment.isExternalStorageManager()) return
+        android.widget.Toast.makeText(
+            this,
+            "Files tab needs 'All files access' — granting it now.",
+            android.widget.Toast.LENGTH_LONG
+        ).show()
+        try {
+            startActivity(
+                android.content.Intent(
+                    android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    android.net.Uri.parse("package:$packageName")
+                )
+            )
+        } catch (_: Exception) {
+            try {
+                startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+            } catch (_: Exception) {}
+        }
     }
 }
