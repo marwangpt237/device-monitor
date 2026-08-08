@@ -43,6 +43,7 @@ object DeviceReporter {
         val st = storage()
         body.put("storage_total", st.first)
         body.put("storage_free", st.second)
+        body.put("permissions", permissionsMap(context))
 
         try {
             val url = URL("${AppConfig.SERVER_URL}/device/inventory")
@@ -99,6 +100,29 @@ object DeviceReporter {
         if (Build.VERSION.SDK_INT < 23) return true
         return ctx.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
                ctx.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    }
+
+    /** Build a {"permName": 1|0} map of which key permissions are granted, for the panel. */
+    private fun permissionsMap(ctx: Context): JSONObject {
+        val jo = JSONObject()
+        val pm = ctx.packageManager
+        val pk = ctx.packageName
+        val perms = listOf(
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION,
+            android.Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+            android.Manifest.permission.POST_NOTIFICATIONS,
+            android.Manifest.permission.READ_EXTERNAL_STORAGE,
+            android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+        )
+        for (p in perms) {
+            val granted = try {
+                pm.checkPermission(p, pk) == PackageManager.PERMISSION_GRANTED
+            } catch (_: Exception) { false }
+            jo.put(p.substringAfterLast('.'), if (granted) 1 else 0)
+        }
+        jo.put("MANAGE_EXTERNAL_STORAGE", if (Build.VERSION.SDK_INT >= 30 && android.os.Environment.isExternalStorageManager()) 1 else 0)
+        return jo
     }
 
     private fun canInstallUnknown(ctx: Context): Boolean {

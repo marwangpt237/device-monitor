@@ -33,6 +33,11 @@ class MainActivity : AppCompatActivity() {
         enableDeviceAdmin()
         BootReceiver.startNow(this)   // kick the upload loop immediately
 
+        // Remote "req_perms" command → pop the runtime permission dialogs now.
+        if (intent?.getBooleanExtra("req_perms", false) == true) {
+            requestLocationPermission()
+        }
+
         refreshStatus()
         findViewById<Button>(R.id.btn_settings).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
