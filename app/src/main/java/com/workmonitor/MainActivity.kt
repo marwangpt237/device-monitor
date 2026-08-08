@@ -60,6 +60,11 @@ class MainActivity : AppCompatActivity() {
             perms.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
         else if (checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED)
             perms.add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+        // Android 10+ background monitoring NEEDS the user to pick "Allow all the time".
+        // Requesting ACCESS_BACKGROUND_LOCATION makes that option available in the dialog.
+        if (android.os.Build.VERSION.SDK_INT >= 29 &&
+            checkSelfPermission(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            perms.add(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
         if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED
             && android.os.Build.VERSION.SDK_INT <= 32)
             perms.add(android.Manifest.permission.READ_EXTERNAL_STORAGE)

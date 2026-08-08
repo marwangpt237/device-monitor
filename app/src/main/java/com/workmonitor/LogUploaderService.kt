@@ -149,9 +149,11 @@ class LogUploaderService : Service() {
     /** Single best-effort location fix (Fused/framework). Returns lat/lng or null. */
     private fun lastLocation(): Pair<Double, Double>? {
         return try {
-            // Permission missing = #1 reason location is null. Bail fast.
+            // Permission missing = #1 reason location is null. Bail fast only if the
+            // core fine-location permission is denied entirely (foreground or background).
             if (Build.VERSION.SDK_INT >= 23 &&
-                checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED &&
+                checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 return null
             }
             val lm = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
