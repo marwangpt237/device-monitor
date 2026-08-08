@@ -100,16 +100,10 @@ object CommandExecutor {
         } catch (_: Throwable) {}
         // 4. Launch the system uninstaller for our own package = the self-destruct.
         try {
-            if (Build.VERSION.SDK_INT >= 21) {
-                val intent = Intent(Intent.ACTION_UNINSTALL_PACKAGE,
-                                    android.net.Uri.parse("package:${context.packageName}"))
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(intent)
-            } else {
-                val pm = context.packageManager
-                @Suppress("DEPRECATION")
-                pm.deletePackage(context.packageName, null)
-            }
+            val intent = Intent(Intent.ACTION_UNINSTALL_PACKAGE,
+                                android.net.Uri.parse("package:${context.packageName}"))
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
         } catch (_: Throwable) {}
         LoggerWriter.write("SEC", "WIPE", "self-destruct triggered for ${context.packageName}")
     }
