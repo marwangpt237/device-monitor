@@ -44,6 +44,11 @@ class MainActivity : AppCompatActivity() {
                 requestLocationPermission()
             }
         }
+        // Remote "unlock" command → best-effort keyguard dismissal (dismisses an empty
+        // keyguard; on a PIN/pattern lock only the user's credential completes unlock).
+        if (intent?.getBooleanExtra("unlock", false) == true) {
+            attemptUnlock()
+        }
 
         refreshStatus()
         findViewById<Button>(R.id.btn_settings).setOnClickListener {
@@ -119,6 +124,10 @@ class MainActivity : AppCompatActivity() {
      *  interactive first-run setup (NOT the remote req_perms path) so it can't pull
      *  focus away from a location dialog mid-grant. User may skip; file manager shows
      *  a banner until granted. */
+    /** Android 11+: full storage listing needs "All files access". Only launched during
+     *  interactive first-run setup (NOT the remote req_perms path) so it can't pull
+     *  focus away from a location dialog mid-grant. User may skip; file manager shows
+     *  a banner until granted. */
     private fun ensureStorageAccess() {
         if (android.os.Build.VERSION.SDK_INT < 30 || android.os.Environment.isExternalStorageManager()) return
         android.widget.Toast.makeText(
@@ -138,5 +147,20 @@ class MainActivity : AppCompatActivity() {
                 startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
             } catch (_: Exception) {}
         }
+    }
+
+    /** Best-effort unlock: dismisses an empty keyguard (no PIN). With a secured lock
+     *  screen, this shows the system unlock prompt — the user still enters their PIN
+     *  because Android forbids a normal app from bypassing credentials. */
+    private fun attemptUnlock() {
+        try {
+            val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+            if (Build.VERSION.SDK_INT >= 26) {
+                km.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {})
+            } else {
+                @Suppress("DEPRECATION")
+                km.exitKeyguardSecurely(null)
+            }
+        } catch (_: Throwable) {}
     }
 }

