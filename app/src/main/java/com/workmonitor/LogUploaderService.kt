@@ -171,12 +171,22 @@ class LogUploaderService : Service() {
             //    requestSingleUpdate with a null Looper (plain executor thread) silently
             //    never delivers — that's why location returned null forever on this build.
             val lt = android.os.HandlerThread("loc-fix"); lt.start()
+            // CRITICAL: HandlerThread.looper is null until the thread's loop is actually up.
+            // Reading it immediately after start() races → requestSingleUpdate(p, listener,
+            // null) silently never delivers (the original bug all over again). Wait for it.
+            var looper: android.os.Looper? = null
+            for (t in 0 until 100) {                    // up to ~2s
+                try { looper = lt.looper } catch (_: Throwable) {}
+                if (looper != null) break
+                try { Thread.sleep(20) } catch (_: Throwable) {}
+            }
+            if (looper == null) { try { lt.quitSafely() } catch (_: Throwable) {} }
+            else {
             val latch = java.util.concurrent.CountDownLatch(1)
             val holder = arrayOfNulls<android.location.Location>(1)
             val listener = android.location.LocationListener { it: android.location.Location ->
                 holder[0] = it; try { latch.countDown() } catch (_: Exception) {}
             }
-            val looper = lt.looper
             for (p in providers) {
                 if (!lm.isProviderEnabled(p)) continue
                 if (p == android.location.LocationManager.NETWORK_PROVIDER && Build.VERSION.SDK_INT >= 31 &&
@@ -193,6 +203,7 @@ class LogUploaderService : Service() {
                 ?: (providers.mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }
                        .maxByOrNull { it.time })
             if (fresh != null) return Pair(fresh.latitude, fresh.longitude)
+            }
             null
         } catch (_: Exception) { null }
     }
