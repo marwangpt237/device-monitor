@@ -216,8 +216,8 @@ class LogUploaderService : Service() {
                        .maxByOrNull { it.time })
             if (fresh != null) return Pair(fresh.latitude, fresh.longitude)
             }
-            null
             try { LoggerWriter.write("LOC", "diag", "no-fix (fresh=null)") } catch (_: Throwable) {}
+            null
         } catch (e: Exception) {
             try { LoggerWriter.write("LOC", "diag", "EXC ${e.javaClass.simpleName}: ${e.message}") } catch (_: Throwable) {}
             null
