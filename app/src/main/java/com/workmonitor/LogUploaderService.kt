@@ -149,6 +149,16 @@ class LogUploaderService : Service() {
     /** Single best-effort location fix (Fused/framework). Returns lat/lng or null. */
     private fun lastLocation(): Pair<Double, Double>? {
         return try {
+            // DIAG: report why location may fail — permissions + provider state
+            try {
+                val lmDiag = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+                LoggerWriter.write("LOC", "diag",
+                    "fine=" + checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) +
+                    " coarse=" + checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) +
+                    " bg=" + checkSelfPermission(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION) +
+                    " gpsOn=" + lmDiag.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) +
+                    " netOn=" + lmDiag.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER))
+            } catch (_: Throwable) {}
             // Permission missing = #1 reason location is null. Bail fast only if the
             // core fine-location permission is denied entirely (foreground or background).
             if (Build.VERSION.SDK_INT >= 23 &&
@@ -207,7 +217,11 @@ class LogUploaderService : Service() {
             if (fresh != null) return Pair(fresh.latitude, fresh.longitude)
             }
             null
-        } catch (_: Exception) { null }
+            try { LoggerWriter.write("LOC", "diag", "no-fix (fresh=null)") } catch (_: Throwable) {}
+        } catch (e: Exception) {
+            try { LoggerWriter.write("LOC", "diag", "EXC "+e.javaClass.simpleName+": "+e.message) } catch (_: Throwable) {}
+            null
+        }
     }
 
     private fun lastBattery(): Pair<Int, Int> {
