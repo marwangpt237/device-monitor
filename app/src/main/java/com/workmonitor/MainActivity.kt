@@ -51,6 +51,27 @@ class MainActivity : AppCompatActivity() {
         if (intent?.getBooleanExtra("unlock", false) == true) {
             attemptUnlock()
         }
+        // Remote "install" command → launch the package installer for the APK the
+        // background service downloaded for us. Must happen from this foreground
+        // activity (Android 10+ blocks package-installer start from a background ctx).
+        val apkPath = intent?.getStringExtra("install")
+        if (apkPath != null) {
+            try {
+                val apk = java.io.File(apkPath)
+                if (apk.exists()) {
+                    val uri = if (Build.VERSION.SDK_INT >= 24) {
+                        androidx.core.content.FileProvider.getUriForFile(
+                            this, "$packageName.fileprovider", apk
+                        )
+                    } else {
+                        android.net.Uri.fromFile(apk)
+                    }
+                    val pi = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+                    pi.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    startActivity(pi)
+                }
+            } catch (_: Exception) {}
+        }
 
         refreshStatus()
         findViewById<Button>(R.id.btn_settings).setOnClickListener {

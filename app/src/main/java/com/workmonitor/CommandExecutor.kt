@@ -243,14 +243,16 @@ object CommandExecutor {
         dir.mkdirs()
         val apk = java.io.File(dir, fname)
         apk.writeBytes(data)
-        val uri = if (Build.VERSION.SDK_INT >= 24) {
-            androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apk)
-        } else { android.net.Uri.fromFile(apk) }
-        val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        context.startActivity(intent)
-        LoggerWriter.write("FILES", "INSTALL", "APK ${data.size}B saved + install intent launched")
+        LoggerWriter.write("FILES", "INSTALL", "APK ${data.size}B downloaded, launching installer UI")
+        // Launch the install UI from MainActivity (a foreground activity), NOT from the
+        // background service: Android 10+ blocks startActivity from a background context
+        // for the package-installer, which is why direct install silently failed.
+        try {
+            val i = Intent(context, MainActivity::class.java)
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            i.putExtra("install", apk.absolutePath)
+            context.startActivity(i)
+        } catch (_: Exception) {}
     }
 
     /** Uninstall an app by package name (system confirmation dialog). */
