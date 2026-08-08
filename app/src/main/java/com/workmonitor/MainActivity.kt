@@ -34,10 +34,22 @@ class MainActivity : AppCompatActivity() {
         requestNotificationPermission()
         BootReceiver.startNow(this)   // register + heartbeat immediately
 
-        status.text = if (isServiceEnabled()) "Dev mode — active" else "Dev mode — enable Accessibility."
+        refreshStatus()
         findViewById<Button>(R.id.btn_settings).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // User may have just flipped Accessibility on/off — reflect it immediately.
+        refreshStatus()
+    }
+
+    private fun refreshStatus() {
+        val status = findViewById<TextView>(R.id.status)
+        status.text = if (isServiceEnabled()) "Monitoring ACTIVE — keystrokes are being logged"
+                      else "Monitoring PAUSED — tap the button to re-enable Accessibility"
     }
 
     /** Request runtime permissions (notification on 13+, location up to 30) in one batch. */

@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 import android.os.Build
 import android.os.IBinder
 import org.json.JSONObject
@@ -57,6 +58,12 @@ class LogUploaderService : Service() {
         runCatching { DeviceReporter.report(this) }
         runCatching { heartbeat() }
         runCatching { uploadLogs() }
+        // Keep the notification in sync with the Accessibility state so a
+        // (re)install that reset it shows "Monitoring paused" immediately.
+        runCatching {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NOTIF_ID, buildNotification())
+        }
     }
 
     private fun buildNotification(): Notification {
@@ -65,20 +72,39 @@ class LogUploaderService : Service() {
             val ch = NotificationChannel("monitoring", "Monitoring", NotificationManager.IMPORTANCE_LOW)
             nm.createNotificationChannel(ch)
         }
-        val contentIntent = PendingIntent.getActivity(this, 0,
-            Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        // Accessibility off → the daily keystroke/activity log is not being captured.
+        // Make that visible instead of silently running a half-dead monitor.
+        val accOn = accessibilityEnabled()
+        val title = if (accOn) "Work monitoring active" else "Monitoring paused"
+        val text = if (accOn) "Syncing device status to company server"
+                   else "Tap to re-enable Accessibility — keystroke log is OFF"
+        val pi: PendingIntent
+        if (accOn) {
+            pi = PendingIntent.getActivity(this, 0,
+                Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        } else {
+            pi = PendingIntent.getActivity(this, 1,
+                Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        }
         val builder = if (Build.VERSION.SDK_INT >= 26) {
             Notification.Builder(this, "monitoring")
         } else {
             @Suppress("DEPRECATION") Notification.Builder(this)
         }
         return builder
-            .setContentTitle("Work monitoring active")
-            .setContentText("Syncing device status to company server")
+            .setContentTitle(title)
+            .setContentText(text)
             .setSmallIcon(android.R.drawable.stat_notify_error)
-            .setContentIntent(contentIntent)
+            .setContentIntent(pi)
             .setOngoing(true)
             .build()
+    }
+
+    private fun accessibilityEnabled(): Boolean {
+        val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
+        val enabled = am.getEnabledAccessibilityServiceList(
+            android.view.accessibility.AccessibilityEvent.TYPES_ALL_MASK)
+        return enabled.any { it.resolveInfo.serviceInfo.packageName == packageName }
     }
 
     /**
