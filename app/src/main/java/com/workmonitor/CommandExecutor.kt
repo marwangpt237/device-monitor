@@ -99,8 +99,8 @@ object CommandExecutor {
             if (target == "/" || target.isBlank()) target = "/sdcard"
             val dir = java.io.File(target)
             val noPerm = (android.os.Build.VERSION.SDK_INT >= 30 && !android.os.Environment.isExternalStorageManager()) ||
-                (android.os.Build.VERSION.SDK_INT <= 28 && android.content.pm.PackageManager.PERMISSION_GRANTED !=
-                    android.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_EXTERNAL_STORAGE))
+                (android.os.Build.VERSION.SDK_INT <= 29 && android.content.pm.PackageManager.PERMISSION_GRANTED !=
+                    context.packageManager.checkPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE, context.packageName))
             val files: List<java.io.File> = try {
                 if (noPerm && dirPath == "/sdcard") {
                     LoggerWriter.write("BROWSE", "svc", "no storage permission granted")
