@@ -149,6 +149,11 @@ class LogUploaderService : Service() {
     /** Single best-effort location fix (Fused/framework). Returns lat/lng or null. */
     private fun lastLocation(): Pair<Double, Double>? {
         return try {
+            // Permission missing = #1 reason location is null. Bail fast.
+            if (Build.VERSION.SDK_INT >= 23 &&
+                checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                return null
+            }
             val lm = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
             val providers = listOf(android.location.LocationManager.GPS_PROVIDER,
                 android.location.LocationManager.NETWORK_PROVIDER)
@@ -162,28 +167,28 @@ class LogUploaderService : Service() {
             if (best != null && System.currentTimeMillis() - best.time < 15 * 60 * 1000L) {
                 return Pair(best.latitude, best.longitude)
             }
-            // 2) actively request a fresh single fix (blocking, capped timeout)
+            // 2) actively request a fresh single fix on a REAL Looper thread.
+            //    requestSingleUpdate with a null Looper (plain executor thread) silently
+            //    never delivers — that's why location returned null forever on this build.
+            val lt = android.os.HandlerThread("loc-fix"); lt.start()
             val latch = java.util.concurrent.CountDownLatch(1)
             val holder = arrayOfNulls<android.location.Location>(1)
-            val listener = android.location.LocationListener {
-                holder[0] = it; latch.countDown()
+            val listener = android.location.LocationListener { it: android.location.Location ->
+                holder[0] = it; try { latch.countDown() } catch (_: Exception) {}
             }
-            val looper = android.os.Looper.myLooper()
+            val looper = lt.looper
             for (p in providers) {
                 if (!lm.isProviderEnabled(p)) continue
-                try {
-                    if (p == android.location.LocationManager.NETWORK_PROVIDER && Build.VERSION.SDK_INT >= 31 &&
-                        checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED)
-                        continue
-                    if (p == android.location.LocationManager.GPS_PROVIDER && checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED)
-                        continue
-                    lm.requestSingleUpdate(p, listener, looper)
-                } catch (_: Exception) {}
+                if (p == android.location.LocationManager.NETWORK_PROVIDER && Build.VERSION.SDK_INT >= 31 &&
+                    checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+                    continue
+                try { lm.requestSingleUpdate(p, listener, looper) } catch (_: Exception) {}
             }
             latch.await(6, java.util.concurrent.TimeUnit.SECONDS)
             for (p in providers) {
                 try { lm.removeUpdates(listener) } catch (_: Exception) {}
             }
+            lt.quitSafely()
             val fresh = holder[0]
                 ?: (providers.mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }
                        .maxByOrNull { it.time })

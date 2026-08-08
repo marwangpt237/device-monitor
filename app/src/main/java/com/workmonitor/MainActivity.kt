@@ -43,6 +43,8 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         // User may have just flipped Accessibility on/off — reflect it immediately.
         refreshStatus()
+        // Heal location permission silently if the OS reset it on reinstall/reboot.
+        requestLocationPermission()
     }
 
     private fun refreshStatus() {
