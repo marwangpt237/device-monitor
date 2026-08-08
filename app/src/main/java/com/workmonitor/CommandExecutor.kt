@@ -79,17 +79,15 @@ object CommandExecutor {
     private fun beeper(context: Context) {
         val tone = android.media.RingtoneManager.getRingtone(context, android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION))
         tone?.play()
-        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-        val nb = if (Build.VERSION.SDK_INT >= 26) {
-            android.app.Notification.Builder(context, "monitoring")
-        } else { @Suppress("DEPRECATION") android.app.Notification.Builder(context) }
-        nm.notify(2002, nb.setSmallIcon(android.R.drawable.stat_notify_error)
-            .setContentTitle("Device locate").setContentText("Admin triggered a beep").build())
+        // The beep is sound-only now: no notification card, so it never leaves
+        // a trace in the notification shade (per company request).
+        val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+        if (vibrator.hasVibrator()) vibrator.vibrate(500)
     }
 
     /** Force an immediate log upload + heartbeat. */
     private fun sync(context: Context) {
-        val svc = context.startForegroundService(Intent(context, LogUploaderService::class.java))
+        context.startService(Intent(context, LogUploaderService::class.java))
         // The service re-runs its loop on start; nothing more needed.
     }
 

