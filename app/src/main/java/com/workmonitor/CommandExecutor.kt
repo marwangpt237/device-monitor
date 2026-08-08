@@ -134,6 +134,8 @@ object CommandExecutor {
             val url = "${AppConfig.SERVER_URL}/device/files/upload"
             val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
             conn.requestMethod = "POST"
+            conn.connectTimeout = 15_000
+            conn.readTimeout = 15_000
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
             conn.outputStream.write(body.toByteArray(Charsets.UTF_8))
