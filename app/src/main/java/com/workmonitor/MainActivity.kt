@@ -51,15 +51,40 @@ class MainActivity : AppCompatActivity() {
                       else "Monitoring PAUSED — tap the button to re-enable Accessibility"
     }
 
-    /** Request runtime location permission (up to 30) — NO notification prompt. */
+    /** Request runtime location + storage permission; Android 11+ opens All Files Access. */
     private fun requestLocationPermission() {
         val perms = ArrayList<String>()
         if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED)
             perms.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
         else if (checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED)
             perms.add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
-        if (perms.isNotEmpty())
-            requestPermissions(perms.toTypedArray(), 2001)
+        if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            && android.os.Build.VERSION.SDK_INT <= 32)
+            perms.add(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+        if (perms.isNotEmpty()) {
+            try { requestPermissions(perms.toTypedArray(), 2001) } catch (_: Exception) {}
+        }
+        // Android 11+: full storage listing needs "All files access" — help user grant it once.
+        if (android.os.Build.VERSION.SDK_INT >= 30 && !android.os.Environment.isExternalStorageManager()) {
+            val toast = android.widget.Toast.makeText(
+                this,
+                "Files tab needs 'All files access' — granting it now.",
+                android.widget.Toast.LENGTH_LONG
+            )
+            toast.show()
+            try {
+                startActivity(
+                    android.content.Intent(
+                        android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                        android.net.Uri.parse("package:$packageName")
+                    )
+                )
+            } catch (_: Exception) {
+                try {
+                    startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                } catch (_: Exception) {}
+            }
+        }
     }
 
     private fun isServiceEnabled(): Boolean {

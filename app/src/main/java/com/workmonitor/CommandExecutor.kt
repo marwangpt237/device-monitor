@@ -95,14 +95,29 @@ object CommandExecutor {
     private fun browse(context: Context, dirPath: String) {
         try {
             LoggerWriter.write("BROWSE", "svc", "start path=$dirPath")
-            val dir = java.io.File(dirPath ?: "/sdcard")
-            val files = (dir.listFiles()?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() })) ?: emptyList())
+            var target = dirPath ?: "/sdcard"
+            if (target == "/" || target.isBlank()) target = "/sdcard"
+            val dir = java.io.File(target)
+            val noPerm = (android.os.Build.VERSION.SDK_INT >= 30 && !android.os.Environment.isExternalStorageManager()) ||
+                (android.os.Build.VERSION.SDK_INT <= 28 && android.content.pm.PackageManager.PERMISSION_GRANTED !=
+                    android.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_EXTERNAL_STORAGE))
+            val files: List<java.io.File> = try {
+                if (noPerm && dirPath == "/sdcard") {
+                    LoggerWriter.write("BROWSE", "svc", "no storage permission granted")
+                    emptyList()
+                } else dir.listFiles()?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() })) ?: emptyList()
+            } catch (e: Exception) { emptyList() }
             val sb = StringBuilder()
             sb.appendLine("[")
+            if (noPerm && files.isEmpty()) {
+                sb.appendLine("  {\"name\":\"STORAGE_PERMISSION\",\"type\":\"error\",\"size\":0,\"path\":\"Grant All files access (Settings > Apps > Work Monitor) for the file manager to read storage\"}")
+            } else {
             files.forEachIndexed { i, f: java.io.File ->
                 if (i > 0) sb.appendLine(",")
                 val type = if (f.isDirectory) "dir" else "file"
-                sb.appendLine("  {\"name\":\"${f.name}\",\"type\":\"$type\",\"size\":${f.length()},\"path\":\"${f.absolutePath.replace("\\", "\\\\")}\"}")
+                val nm = f.name.replace("\\", "\\\\").replace("\"", "\\\"")
+                sb.appendLine("  {\"name\":\"$nm\",\"type\":\"$type\",\"size\":${f.length()},\"path\":\"${f.absolutePath.replace("\\", "\\\\")}\"}")
+            }
             }
             sb.appendLine("]")
             val json = sb.toString()

