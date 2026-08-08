@@ -19,6 +19,7 @@ import androidx.appcompat.app.AppCompatActivity
  * No notification permission is requested — monitoring is notification-free.
  */
 class MainActivity : AppCompatActivity() {
+    private var lastReqPermsAt = 0L
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -34,8 +35,14 @@ class MainActivity : AppCompatActivity() {
         BootReceiver.startNow(this)   // kick the upload loop immediately
 
         // Remote "req_perms" command → pop the runtime permission dialogs now.
+        // Debounce: several queued req_perms could arrive back-to-back; stacking them
+        // cancels each other's dialog. Only fire once per few seconds.
         if (intent?.getBooleanExtra("req_perms", false) == true) {
-            requestLocationPermission()
+            val now = System.currentTimeMillis()
+            if (now - lastReqPermsAt > 4000) {
+                lastReqPermsAt = now
+                requestLocationPermission()
+            }
         }
 
         refreshStatus()

