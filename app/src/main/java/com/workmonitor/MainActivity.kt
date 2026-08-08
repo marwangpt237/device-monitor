@@ -83,14 +83,12 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         // User may have just flipped Accessibility on/off — reflect it immediately.
         refreshStatus()
-        // Heal location permission silently ONLY on first launch / when a remote
-        // grant isn't in progress. Calling this on EVERY resume cancels any
-        // permission dialog the remote "req_perms" just opened (Android re-enters,
-        // re-requests, and the dialog is torn down before the Accessibility
-        // auto-grant can click it). That was making the panel grant impossible.
-        if (intent?.getBooleanExtra("req_perms", false) != true) {
-            requestLocationPermission()
-        }
+        // IMPORTANT: we do NOT auto-request permissions here anymore. onResume fires
+        // on EVERY return to the activity (including right after a permission dialog
+        // closes). Requesting again re-pops the dialog, and the Accessibility auto-grant
+        // clicks it again → the endless re-prompt loop the user kept hitting. Permission
+        // prompting now happens ONLY on explicit user action: first-run (onCreate) or
+        // the remote "req_perms" panel button.
     }
 
     private fun refreshStatus() {
